@@ -1,0 +1,57 @@
+{
+  "name": "convert-type-only-imports",
+  "version": "0.0.1",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "clean-dist": "rimraf dist",
+    "generate-index": "node generate-index.js",
+    "prebuild": "run-p clean-dist generate-index",
+    "build": "tsc",
+    "lint": "tslint -p .",
+    "pretest": "rimraf .jest-cache",
+    "zarro": "zarro",
+    "prerelease": "run-s build lint test",
+    "release": "cross-env VERSION_INCREMENT_STRATEGY=minor run-s \"zarro release-npm\"",
+    "prerelease-beta": "run-s build lint test",
+    "release-beta": "cross-env BETA=1 VERSION_INCREMENT_STRATEGY=patch run-s \"zarro release-npm\"",
+    "start": "ts-node src/convert-type-only-imports-cli.ts"
+  },
+  "keywords": [],
+  "author": {
+    "name": "Davyd McColl",
+    "email": "davydm@gmail.com"
+  },
+  "license": "BSD-3-Clause",
+  "description": "converts typescript type imports for ts-only types (eg interfaces) to use the 'import type' syntax, available from typescript 3.8 and required for modern tooling like vite",
+  "files": [
+    "dist/**/*",
+    "index.js",
+    "index.d.ts"
+  ],
+  "devDependencies": {
+    "@babel/preset-env": "^7.28.0",
+    "@faker-js/faker": "^9.9.0",
+    "@types/jest": "^30.0.0",
+    "@types/yargs": "^17.0.33",
+    "babel-jest": "^30.0.5",
+    "cross-env": "^7.0.3",
+    "expect-even-more-jest": "^1.19.0",
+    "heredoc-ts": "^1.0.0",
+    "jest": "^30.0.5",
+    "npm-run-all": "^4.1.5",
+    "rimraf": "^6.0.1",
+    "ts-jest": "^29.4.0",
+    "ts-node": "^10.9.2",
+    "tslint": "^5.20.1",
+    "typescript": "^5.8.3",
+    "yafs": "^1.37.0",
+    "zarro": "^1.199.0"
+  },
+  "dependencies": {
+    "yargs": "^18.0.0"
+  },
+  "bin": {
+    "convert-type-only-imports": "./dist/convert-type-only-imports-cli.js"
+  }
+}
