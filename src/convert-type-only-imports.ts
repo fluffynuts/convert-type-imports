@@ -56,7 +56,8 @@ export async function convertTypeOnlyImports(
 
             const isCloseBrace = word.trim() === "}";
 
-            if (inImport) {
+            // tslint:disable-next-line:label-position
+            check_import: if (inImport) {
                 if (typeExports.has(word)) {
                     result.push(`type ${word}`);
                 } else {
@@ -74,7 +75,7 @@ export async function convertTypeOnlyImports(
 
             if (inImport) {
                 if (inImportBraces && isCloseBrace) {
-                    // block with `if (inImport)` would have appended the brace,
+                    // the block labeled 'check_import' would have appended the brace,
                     // so consolidateRecentTypeImports can backtrack to consolidate
                     inImportBraces = false;
                     inImport = false;
