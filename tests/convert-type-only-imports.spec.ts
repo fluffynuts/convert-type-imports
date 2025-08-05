@@ -3,83 +3,87 @@ import { faker } from "@faker-js/faker";
 import { Sandbox } from "filesystem-sandbox";
 import { convertTypeOnlyImports } from "../src";
 import { heredoc } from "heredoc-ts";
+import { ctx } from "exec-step";
 
 describe(`convert-type-only-imports`, () => {
-    const { stringContaining } = expect;
-    it(`should fail when the provided folder doesn't exist`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            badPath = sandbox.fullPathFor(faker.word.noun());
-        // Act
-        await expect(convertTypeOnlyImports(badPath))
-            .toBeRejected(
-                stringContaining(
-                    "not found"
-                )
-            );
-        // Assert
-    });
+    describe(`within the project code`, () => {
+        it(`should fail when the provided folder doesn't exist`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                badPath = sandbox.fullPathFor(faker.word.noun());
+            // Act
+            await expect(convertTypeOnlyImports({ in: badPath }))
+                .toBeRejected(
+                    expect.stringContaining(
+                        "not found"
+                    )
+                );
+            // Assert
+        });
 
-    it(`should not modify a file with no imports`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            expected = heredoc`
+        it(`should not modify a file with no imports`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                expected = heredoc`
             export function sayMoo() {
                 console.log("moo! moo, I say!")
             }
             `,
-            tsFilePath = await sandbox.writeFile("main.ts", expected);
-        // Act
-        await convertTypeOnlyImports(sandbox.path);
-        // Assert
-        expect(tsFilePath)
-            .toHaveContents(expected);
-    });
+                tsFilePath = await sandbox.writeFile("main.ts", expected);
+            // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
+            // Assert
+            expect(tsFilePath)
+                .toHaveContents(expected);
+        });
 
-    it(`should modify a single type import (no consolidation)`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            exporter = heredoc`
+        it(`should modify a single type import (no consolidation)`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
                 export interface ICow {
                     name: string;
                 }
             `,
-            originalMain = heredoc`
+                originalMain = heredoc`
                 import { ICow } from "./cow.ts";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
             `,
-            expected = heredoc`
+                expected = heredoc`
                 import { type ICow } from "./cow.ts";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
             `;
-        await sandbox.writeFile("main.ts", originalMain);
-        await sandbox.writeFile("cow.ts", exporter);
-        // Act
-        await convertTypeOnlyImports(sandbox.path, { consolidateTypeImports: false });
-        // Assert
-        expect(sandbox.fullPathFor("main.ts"))
-            .toHaveContents(expected);
-        expect(sandbox.fullPathFor("cow.ts"))
-            .toHaveContents(exporter);
-    });
+            await sandbox.writeFile("main.ts", originalMain);
+            await sandbox.writeFile("cow.ts", exporter);
+            // Act
+            await convertTypeOnlyImports({
+                in: sandbox.path,
+                consolidateTypeImports: false
+            });
+            // Assert
+            expect(sandbox.fullPathFor("main.ts"))
+                .toHaveContents(expected);
+            expect(sandbox.fullPathFor("cow.ts"))
+                .toHaveContents(exporter);
+        });
 
-    it(`should modify a single type import (no consolidation, vertical arrangement)`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            exporter = heredoc`
+        it(`should modify a single type import (no consolidation, vertical arrangement)`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
                 export interface ICow {
                     name: string;
                 }
             `,
-            originalMain = heredoc`
+                originalMain = heredoc`
                 import {
                     ICow
                 } from "./cow.ts";
@@ -87,7 +91,7 @@ describe(`convert-type-only-imports`, () => {
                     return { name: "Daisy" };
                 }
             `,
-            expected = heredoc`
+                expected = heredoc`
                 import {
                     type ICow
                 } from "./cow.ts";
@@ -95,54 +99,60 @@ describe(`convert-type-only-imports`, () => {
                     return { name: "Daisy" };
                 }
             `;
-        await sandbox.writeFile("main.ts", originalMain);
-        await sandbox.writeFile("cow.ts", exporter);
-        // Act
-        await convertTypeOnlyImports(sandbox.path, { consolidateTypeImports: false });
-        // Assert
-        expect(sandbox.fullPathFor("main.ts"))
-            .toHaveContents(expected);
-        expect(sandbox.fullPathFor("cow.ts"))
-            .toHaveContents(exporter);
-    });
+            await sandbox.writeFile("main.ts", originalMain);
+            await sandbox.writeFile("cow.ts", exporter);
+            // Act
+            await convertTypeOnlyImports({
+                in: sandbox.path,
+                consolidateTypeImports: false
+            });
+            // Assert
+            expect(sandbox.fullPathFor("main.ts"))
+                .toHaveContents(expected);
+            expect(sandbox.fullPathFor("cow.ts"))
+                .toHaveContents(exporter);
+        });
 
-    it(`should modify a single type import (consolidated (default))`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            exporter = heredoc`
+        it(`should modify a single type import (consolidated (default))`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
                 export interface ICow {
                     name: string;
                 }
             `,
-            originalMain = heredoc`
+                originalMain = heredoc`
                 import { ICow } from "./cow.ts";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
             `,
-            expected = heredoc`
+                expected = heredoc`
                 import type { ICow } from "./cow.ts";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
             `;
-        await sandbox.writeFile("main.ts", originalMain);
-        await sandbox.writeFile("cow.ts", exporter);
-        // Act
-        await convertTypeOnlyImports(sandbox.path, { consolidateTypeImports: true });
-        // Assert
-        expect(sandbox.fullPathFor("main.ts"))
-            .toHaveContents(expected);
-        expect(sandbox.fullPathFor("cow.ts"))
-            .toHaveContents(exporter);
-    });
+            await sandbox.writeFile("main.ts", originalMain);
+            await sandbox.writeFile("cow.ts", exporter);
+            // Act
+            await convertTypeOnlyImports({
+                in: sandbox.path,
+                consolidateTypeImports: true
+            });
+            // Assert
+            expect(sandbox.fullPathFor("main.ts"))
+                .toHaveContents(expected);
+            expect(sandbox.fullPathFor("cow.ts"))
+                .toHaveContents(exporter);
+        });
 
-    it(`should modify a single type import with another concrete import`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            exporter = heredoc`
+        it(`should modify a single type import with another concrete import`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
                 export interface ICow {
                     name: string;
                 }
@@ -151,34 +161,34 @@ describe(`convert-type-only-imports`, () => {
                     }
                 }
                 `,
-            main = heredoc`
+                main = heredoc`
                 import { ICow, Cow } from "./cow.ts";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
             `,
-            expected = heredoc`
+                expected = heredoc`
                 import { type ICow, Cow } from "./cow.ts";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
             `;
-        const exporterFile = await sandbox.writeFile("cow.ts", exporter);
-        const mainFile = await sandbox.writeFile("main.ts", main);
-        // Act
-        await convertTypeOnlyImports(sandbox.path);
-        // Assert
-        expect(mainFile)
-            .toHaveContents(expected);
-        expect(exporterFile)
-            .toHaveContents(exporter);
-    });
+            const exporterFile = await sandbox.writeFile("cow.ts", exporter);
+            const mainFile = await sandbox.writeFile("main.ts", main);
+            // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
+            // Assert
+            expect(mainFile)
+                .toHaveContents(expected);
+            expect(exporterFile)
+                .toHaveContents(exporter);
+        });
 
-    it(`should consolidate type-only imports`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            exporter = heredoc`
+        it(`should consolidate type-only imports`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
                 export interface ICow {
                     name: string;
                 }
@@ -188,36 +198,36 @@ describe(`convert-type-only-imports`, () => {
                     }
                 }
                 `,
-            main = heredoc`
+                main = heredoc`
                 import { ICow, IDog } from "./cow.ts";
                 import { Cow } from "./cow.ts";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
             `,
-            expected = heredoc`
+                expected = heredoc`
                 import type { ICow, IDog } from "./cow.ts";
                 import { Cow } from "./cow.ts";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
             `;
-        const exporterFile = await sandbox.writeFile("cow.ts", exporter);
-        const mainFile = await sandbox.writeFile("main.ts", main);
-        // Act
-        await convertTypeOnlyImports(sandbox.path);
-        // Assert
-        expect(exporterFile)
-            .toHaveContents(exporter);
-        expect(mainFile)
-            .toHaveContents(expected);
-    });
+            const exporterFile = await sandbox.writeFile("cow.ts", exporter);
+            const mainFile = await sandbox.writeFile("main.ts", main);
+            // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
+            // Assert
+            expect(exporterFile)
+                .toHaveContents(exporter);
+            expect(mainFile)
+                .toHaveContents(expected);
+        });
 
-    it(`should not break when imports have been arranged vertically (1)`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            exporter = heredoc`
+        it(`should not break when imports have been arranged vertically (1)`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
                 export interface ICow {
                     name: string;
                 }
@@ -227,7 +237,7 @@ describe(`convert-type-only-imports`, () => {
                     }
                 }
                 `,
-            main = heredoc`
+                main = heredoc`
                 import {
                     ICow,
                     IDog
@@ -237,7 +247,7 @@ describe(`convert-type-only-imports`, () => {
                     return new Cow("Daisy");
                 }
             `,
-            expected = heredoc`
+                expected = heredoc`
                 import type {
                     ICow,
                     IDog
@@ -247,22 +257,22 @@ describe(`convert-type-only-imports`, () => {
                     return new Cow("Daisy");
                 }
             `;
-        const exporterFile = await sandbox.writeFile("cow.ts", exporter);
-        const mainFile = await sandbox.writeFile("main.ts", main);
-        // Act
-        await convertTypeOnlyImports(sandbox.path);
-        // Assert
-        expect(exporterFile)
-            .toHaveContents(exporter);
-        expect(mainFile)
-            .toHaveContents(expected);
-    });
+            const exporterFile = await sandbox.writeFile("cow.ts", exporter);
+            const mainFile = await sandbox.writeFile("main.ts", main);
+            // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
+            // Assert
+            expect(exporterFile)
+                .toHaveContents(exporter);
+            expect(mainFile)
+                .toHaveContents(expected);
+        });
 
-    it(`should not break when imports have been arranged vertically (2)`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            exporter = heredoc`
+        it(`should not break when imports have been arranged vertically (2)`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
                 export interface ICow {
                     name: string;
                 }
@@ -272,7 +282,7 @@ describe(`convert-type-only-imports`, () => {
                     }
                 }
                 `,
-            main = heredoc`
+                main = heredoc`
                 import {
                     ICow, IDog
                 } from "./cow.ts";
@@ -281,7 +291,7 @@ describe(`convert-type-only-imports`, () => {
                     return new Cow("Daisy");
                 }
             `,
-            expected = heredoc`
+                expected = heredoc`
                 import type {
                     ICow, IDog
                 } from "./cow.ts";
@@ -290,25 +300,25 @@ describe(`convert-type-only-imports`, () => {
                     return new Cow("Daisy");
                 }
             `;
-        const exporterFile = await sandbox.writeFile("cow.ts", exporter);
-        const mainFile = await sandbox.writeFile("main.ts", main);
-        // Act
-        await convertTypeOnlyImports(sandbox.path);
-        // Assert
-        expect(exporterFile)
-            .toHaveContents(exporter);
-        expect(mainFile)
-            .toHaveContents(expected);
-    });
+            const exporterFile = await sandbox.writeFile("cow.ts", exporter);
+            const mainFile = await sandbox.writeFile("main.ts", main);
+            // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
+            // Assert
+            expect(exporterFile)
+                .toHaveContents(exporter);
+            expect(mainFile)
+                .toHaveContents(expected);
+        });
 
-    it(`should work on a single type export`, async () => {
-        // Arrange
-        const
-            sandbox = await Sandbox.create(),
-            exporter = heredoc`
+        it(`should work on a single type export`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
                 export type Action = () => void;
             `,
-            main = heredoc`
+                main = heredoc`
                 import { Action } from "./action.ts",
                 export function tryDo(action: Action, retries: number) {
                     const totalAttempts = retries + 1;
@@ -323,7 +333,7 @@ describe(`convert-type-only-imports`, () => {
                     });
                     throw lastError;
                 }`,
-            expected = heredoc`
+                expected = heredoc`
                 import type { Action } from "./action.ts",
                 export function tryDo(action: Action, retries: number) {
                     const totalAttempts = retries + 1;
@@ -339,17 +349,113 @@ describe(`convert-type-only-imports`, () => {
                     throw lastError;
                 }
             `;
-        const exporterFile = await sandbox.writeFile("action.ts", exporter);
-        const mainFile = await sandbox.writeFile("main.ts", main);
-        // Act
-        await convertTypeOnlyImports(sandbox.path);
-        // Assert
-        expect(exporterFile)
-            .toHaveContents(exporter);
-        expect(mainFile)
-            .toHaveContents(expected);
+            const exporterFile = await sandbox.writeFile("action.ts", exporter);
+            const mainFile = await sandbox.writeFile("main.ts", main);
+            // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
+            // Assert
+            expect(exporterFile)
+                .toHaveContents(exporter);
+            expect(mainFile)
+                .toHaveContents(expected);
+        });
     });
 
+    describe(`importing types from index files`, () => {
+        it(`should import types from a single index file`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                indexContents = heredoc`
+                    export interface Cow {
+                        name: string;
+                    }
+                `,
+                indexFile = await sandbox.writeFile(
+                    "cow/index.ts",
+                    indexContents
+                ),
+                mainContents = heredoc`
+                    import { Cow } from "./cow";
+                    export function makeCow(name: string): Cow {
+                        return { name }
+                    }
+                `,
+                expected = heredoc`
+                    import type { Cow } from "./cow";
+                    export function makeCow(name: string): Cow {
+                        return { name }
+                    }
+                `,
+                mainFile = await sandbox.writeFile(
+                    "main.ts",
+                    mainContents
+                );
+            // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
+            // Assert
+            expect(mainFile)
+                .toHaveContents(expected);
+        });
+
+        it(`should convert type imports from forwarded types in index files`, async () => {
+            // Arrange
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                cowContents = heredoc`
+                    export interface Cow {
+                        name: string;
+                    }
+                `,
+                cowFile = await sandbox.writeFile(
+                    "cow.ts",
+                    cowContents
+                ),
+                indexContents = heredoc`
+                    export * from "./cow";
+                `,
+                indexFile = await sandbox.writeFile(
+                    "cow/index.ts",
+                    indexContents
+                ),
+                mainContents = heredoc`
+                    import { Cow } from "./cow";
+                    export function makeCow(name: string): Cow {
+                        return { name }
+                    }
+                `,
+                expected = heredoc`
+                    import type { Cow } from "./cow";
+                    export function makeCow(name: string): Cow {
+                        return { name }
+                    }
+                `,
+                mainFile = await sandbox.writeFile(
+                    "main.ts",
+                    mainContents
+                );
+            // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
+            // Assert
+            expect(mainFile)
+                .toHaveContents(expected);
+        });
+    });
+
+    describe(`types from node_modules`, () => {
+        it(`should fix the single type import`, async () => {
+            // Arrange
+
+            // Act
+            // Assert
+        });
+    });
+
+    beforeEach(() => {
+        jest.spyOn(ctx, "exec");
+        ctx.mute();
+    });
     afterEach(async () => {
         await Sandbox.destroyAll();
     });

@@ -1,19 +1,88 @@
 import { folderExists, ls, readTextFile, writeTextFile } from "yafs";
+import { ctx } from "exec-step";
 
 // TODO: time and see if there's value in adding a memcache for
 //       file content, since we'll read each file twice
 
 export interface Options {
-    consolidateTypeImports: boolean;
+    in: string;
+    consolidateTypeImports?: boolean;
 }
+
 const defaultOptions: Options = {
+    in: "",
     consolidateTypeImports: true
 };
 const importSyntaxWordsWithinBraces = new Set<string>([ ",", "as" ]);
+
+async function processFile(file: string, typeExports: Set<string>, opts: {
+    in: string;
+    consolidateTypeImports?: boolean
+}) {
+    const
+        contents = await readTextFile(file),
+        words = contents.split(/\b/),
+        result = [] as string[];
+    let
+        inImport = false,
+        inImportBraces = false,
+        importedConcrete = false;
+    for (const word of words) {
+        if (word === "import") {
+            inImport = true;
+            result.push(word);
+            continue;
+        }
+
+        if (inImport && word.trim() === "{") {
+            inImportBraces = true;
+            result.push(word);
+            continue;
+        }
+
+        const isCloseBrace = word.trim() === "}";
+
+        // tslint:disable-next-line:label-position
+        check_import: if (inImport) {
+            if (typeExports.has(word)) {
+                result.push(`type ${word}`);
+            } else {
+                if (!isCloseBrace) {
+                    const isOtherSyntaxWord = importSyntaxWordsWithinBraces.has(
+                        word.trim()
+                    );
+                    if (!isOtherSyntaxWord) {
+                        importedConcrete = true;
+                    }
+                }
+                result.push(word);
+            }
+        }
+
+        if (inImport) {
+            if (inImportBraces && isCloseBrace) {
+                // the block labeled 'check_import' would have appended the brace,
+                // so consolidateRecentTypeImports can backtrack to consolidate
+                inImportBraces = false;
+                inImport = false;
+                if (!importedConcrete && opts.consolidateTypeImports) {
+                    consolidateRecentTypeImports(result);
+                }
+            }
+        } else {
+            result.push(word);
+        }
+    }
+    await writeTextFile(file, result.join(""));
+}
+
 export async function convertTypeOnlyImports(
-    folder: string,
-    options?: Options
+    options: Options
 ): Promise<void> {
+    if (!options.in) {
+        throw new Error(`option 'in' was not set`);
+    }
+    const folder = options.in;
     if (!await folderExists(folder)) {
         throw new Error(`folder not found: ${folder}`);
     }
@@ -31,63 +100,13 @@ export async function convertTypeOnlyImports(
     });
 
     const typeExports = await parseAllTypeExportsFrom(allFiles);
+    let idx = 1;
     for (const file of allFiles) {
-        // TODO: gather external imports & pass through parseAllTypeExportsFrom
-        const
-            contents = await readTextFile(file),
-            words = contents.split(/\b/),
-            result = [] as string[];
-        let
-            inImport = false,
-            inImportBraces = false,
-            importedConcrete = false;
-        for (const word of words) {
-            if (word === "import") {
-                inImport = true;
-                result.push(word);
-                continue;
-            }
-
-            if (inImport && word.trim() === "{") {
-                inImportBraces = true;
-                result.push(word);
-                continue;
-            }
-
-            const isCloseBrace = word.trim() === "}";
-
-            // tslint:disable-next-line:label-position
-            check_import: if (inImport) {
-                if (typeExports.has(word)) {
-                    result.push(`type ${word}`);
-                } else {
-                    if (!isCloseBrace) {
-                        const isOtherSyntaxWord = importSyntaxWordsWithinBraces.has(
-                            word.trim()
-                        );
-                        if (!isOtherSyntaxWord) {
-                            importedConcrete = true;
-                        }
-                    }
-                    result.push(word);
-                }
-            }
-
-            if (inImport) {
-                if (inImportBraces && isCloseBrace) {
-                    // the block labeled 'check_import' would have appended the brace,
-                    // so consolidateRecentTypeImports can backtrack to consolidate
-                    inImportBraces = false;
-                    inImport = false;
-                    if (!importedConcrete && opts.consolidateTypeImports) {
-                        consolidateRecentTypeImports(result);
-                    }
-                }
-            } else {
-                result.push(word);
-            }
-        }
-        await writeTextFile(file, result.join(""));
+        const perc = (idx++ * 100 / allFiles.length).toFixed(0);
+        await ctx.exec(`Processing (${perc}% of ${allFiles.length}): ${file}`,
+            async () => {
+                await processFile(file, typeExports, opts);
+            });
     }
 }
 
@@ -132,7 +151,9 @@ async function parseTypeExportsFrom(file: string): Promise<string[]> {
     for (const str of globalMatches) {
         const localMatch = str.match(localMatcher);
         if (!localMatch || !localMatch.groups) {
-            console.error(`local match doesn't work on: '${str}'`);
+            console.error(`
+ERROR: local match doesn't work on: '${str}'
+(please report this with an example)`.trim());
             continue;
         }
         result.add(localMatch.groups["typeName"]);

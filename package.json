@@ -1,6 +1,6 @@
 {
   "name": "convert-type-only-imports",
-  "version": "0.0.1",
+  "version": "0.0.0",
   "main": "index.js",
   "scripts": {
     "test": "jest",
@@ -50,6 +50,7 @@
     "zarro": "^1.199.0"
   },
   "dependencies": {
+    "exec-step": "^0.18.0",
     "yargs": "^18.0.0"
   },
   "bin": {
