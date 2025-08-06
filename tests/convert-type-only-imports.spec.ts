@@ -519,6 +519,44 @@ describe(`convert-type-only-imports`, () => {
         });
     });
 
+    describe(`handling import aliases`, () => {
+        it(`should resolve aliases provided on the cli`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
+                export interface ICow {
+                    name: string;
+                }
+            `,
+                originalMain = heredoc`
+                import { ICow } from "@/cow.ts";
+                export function makeCow(): ICow {
+                    return { name: "Daisy" };
+                }
+            `,
+                expected = heredoc`
+                import type { ICow } from "@/cow.ts";
+                export function makeCow(): ICow {
+                    return { name: "Daisy" };
+                }
+            `;
+            await sandbox.writeFile("main.ts", originalMain);
+            await sandbox.writeFile("cow.ts", exporter);
+            // Act
+            await convertTypeOnlyImports({
+                in: sandbox.path,
+                consolidateTypeImports: true,
+                alias: { "@": "." }
+            });
+            // Assert
+            expect(sandbox.fullPathFor("main.ts"))
+                .toHaveContents(expected);
+            expect(sandbox.fullPathFor("cow.ts"))
+                .toHaveContents(exporter);
+        });
+    });
+
     beforeEach(() => {
         jest.spyOn(console, "warn").mockReturnValue();
         ctx.mute();

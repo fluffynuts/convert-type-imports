@@ -1,25 +1,77 @@
-import { fileExists, folderExists, folderName, joinPath, ls, readTextFile, writeTextFile } from "yafs";
+import { folderExists, folderName, FsEntities, joinPath, ls, readTextFile, writeTextFile } from "yafs";
 import { ctx } from "exec-step";
 import * as path from "path";
+
+export interface Dictionary<T> {
+    [key: string]: T;
+}
 
 // TODO: time and see if there's value in adding a memcache for
 //       file content, since we'll read each file twice
 
-export interface Options {
+export interface CliOptions {
     in: string;
     consolidateTypeImports?: boolean;
+    alias?: Dictionary<string>;
 }
 
-const defaultOptions: Options = {
+interface Options extends CliOptions {
+    consolidateTypeImports: boolean;
+    alias: Dictionary<string>;
+}
+
+const defaultOptions: CliOptions = {
     in: "",
-    consolidateTypeImports: true
+    consolidateTypeImports: true,
+    alias: {}
 };
 const importSyntaxWordsWithinBraces = new Set<string>([ ",", "as" ]);
 
-async function processFile(file: string, typeExports: Set<string>, opts: {
-    in: string;
-    consolidateTypeImports?: boolean
-}) {
+export async function convertTypeOnlyImports(
+    options: CliOptions
+): Promise<void> {
+    if (!options.in) {
+        throw new Error(`option 'in' was not set`);
+    }
+    const folder = options.in;
+    if (!await folderExists(folder)) {
+        throw new Error(`folder not found: ${folder}`);
+    }
+
+    const opts = {
+        ...defaultOptions,
+        ...options
+    } as Options;
+
+    const allFiles = await ls(folder, {
+        recurse: true,
+        fullPaths: true,
+        exclude: /node_modules/,
+        entities: FsEntities.files,
+        match: /\.ts(x?)$/  // should work for tsx too?
+    });
+
+    const baseFolder = await tryFindFolderContainingNodeModules(folder);
+    const typeExports = await parseAllTypeExportsFrom(
+        allFiles,
+        baseFolder,
+        opts.alias
+    );
+    let idx = 1;
+    for (const file of allFiles) {
+        const perc = (idx++ * 100 / allFiles.length).toFixed(0);
+        await ctx.exec(`Processing (${perc}% of ${allFiles.length}): ${file}`,
+            async () => {
+                await processFile(file, typeExports, opts);
+            });
+    }
+}
+
+async function processFile(
+    file: string,
+    typeExports: Set<string>,
+    opts: Options
+) {
     const
         contents = await readTextFile(file),
         words = contents.split(/\b/),
@@ -77,41 +129,6 @@ async function processFile(file: string, typeExports: Set<string>, opts: {
     await writeTextFile(file, result.join(""));
 }
 
-export async function convertTypeOnlyImports(
-    options: Options
-): Promise<void> {
-    if (!options.in) {
-        throw new Error(`option 'in' was not set`);
-    }
-    const folder = options.in;
-    if (!await folderExists(folder)) {
-        throw new Error(`folder not found: ${folder}`);
-    }
-
-    const opts = {
-        ...defaultOptions,
-        ...options
-    };
-
-    const allFiles = await ls(folder, {
-        recurse: true,
-        fullPaths: true,
-        exclude: /node_modules/,
-        match: /\.ts(x?)$/  // should work for tsx too?
-    });
-
-    const baseFolder = await tryFindFolderContainingNodeModules(folder);
-    const typeExports = await parseAllTypeExportsFrom(allFiles, baseFolder);
-    let idx = 1;
-    for (const file of allFiles) {
-        const perc = (idx++ * 100 / allFiles.length).toFixed(0);
-        await ctx.exec(`Processing (${perc}% of ${allFiles.length}): ${file}`,
-            async () => {
-                await processFile(file, typeExports, opts);
-            });
-    }
-}
-
 async function tryFindFolderContainingNodeModules(
     fromFolder: string
 ): Promise<string | undefined> {
@@ -149,7 +166,8 @@ function consolidateRecentTypeImports(result: string[]) {
 
 async function parseAllTypeExportsFrom(
     files: string[],
-    packageBaseFolder: string | undefined
+    packageBaseFolder: string | undefined,
+    alias: Dictionary<string>
 ): Promise<Set<string>> {
     const result = new Set<string>();
     for (const file of files) {
@@ -160,7 +178,8 @@ async function parseAllTypeExportsFrom(
         if (packageBaseFolder) {
             const typeImports = await parseNodeModuleTypeImportsFrom(
                 file,
-                packageBaseFolder
+                packageBaseFolder,
+                alias
             );
             for (const e of typeImports) {
                 result.add(e);
@@ -201,7 +220,8 @@ const
 
 async function parseNodeModuleTypeImportsFrom(
     file: string,
-    packageBaseFolder: string
+    packageBaseFolder: string,
+    alias: Dictionary<string>
 ): Promise<string[]> {
     const
         result = new Set<string>(),
@@ -219,7 +239,10 @@ ERROR: local import match doesn't work on file '${file}' for fragment: '${str}'
             );
             continue;
         }
-        const moduleName = localMatch.groups["moduleName"];
+        const moduleName = resolveAliases(
+            localMatch.groups["moduleName"],
+            alias
+        );
         const searchPath = path.join(
             packageBaseFolder,
             "node_modules",
@@ -237,7 +260,8 @@ WARNING: can't find node module '${moduleName}' at '${searchPath}'
             searchPath, {
                 recurse: true,
                 fullPaths: true,
-                match: /\.ts$/
+                match: /\.ts$/,
+                entities: FsEntities.files
             }
         );
 
@@ -250,4 +274,19 @@ WARNING: can't find node module '${moduleName}' at '${searchPath}'
 
     }
     return Array.from(result);
+}
+
+function resolveAliases(
+    moduleName: string,
+    alias: Dictionary<string>
+): string {
+    if (alias[moduleName]) {
+        return alias[moduleName];
+    }
+    for (const key of Object.keys(alias)) {
+        if (moduleName.startsWith(key)) {
+            return `${alias[key]}${moduleName.slice(key.length)}`;
+        }
+    }
+    return moduleName;
 }
