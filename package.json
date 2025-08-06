@@ -46,12 +46,12 @@
     "ts-node": "^10.9.2",
     "tslint": "^5.20.1",
     "typescript": "^5.8.3",
-    "yafs": "^1.47.0",
     "zarro": "^1.199.0"
   },
   "dependencies": {
     "exec-step": "^0.18.0",
-    "yargs": "^18.0.0"
+    "yargs": "^18.0.0",
+    "yafs": "^1.47.0"
   },
   "bin": {
     "convert-type-only-imports": "./dist/convert-type-only-imports-cli.js"
