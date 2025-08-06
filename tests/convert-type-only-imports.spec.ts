@@ -4,6 +4,7 @@ import { Sandbox } from "filesystem-sandbox";
 import { convertTypeOnlyImports } from "../src";
 import { heredoc } from "heredoc-ts";
 import { ctx } from "exec-step";
+import { CopyFileOptions, cp } from "yafs";
 
 describe(`convert-type-only-imports`, () => {
     describe(`within the project code`, () => {
@@ -441,19 +442,85 @@ describe(`convert-type-only-imports`, () => {
             expect(mainFile)
                 .toHaveContents(expected);
         });
+
+        it(`should parse multi-line type exports`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                cowContents = heredoc`
+                    export
+                        interface
+                            Cow
+                            {
+                                name: string;
+                            }
+                `,
+                cowFile = await sandbox.writeFile(
+                    "cow.ts",
+                    cowContents
+                ),
+                mainContents = heredoc`
+                    import { Cow } from "./cow";
+                    export function makeCow(name: string): Cow {
+                        return { name }
+                    }
+                `,
+                expected = heredoc`
+                    import type { Cow } from "./cow";
+                    export function makeCow(name: string): Cow {
+                        return { name }
+                    }
+                `,
+                mainFile = await sandbox.writeFile(
+                    "main.ts",
+                    mainContents
+                );
+            // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
+            // Assert
+            expect(mainFile)
+                .toHaveContents(expected);
+        });
     });
 
     describe(`types from node_modules`, () => {
         it(`should fix the single type import`, async () => {
             // Arrange
-
+            const
+                sandbox = await Sandbox.create(),
+                mainContents = heredoc`
+                    import { LsOptions, ls } from "yafs";
+                    export function lsr(at: string): Promise<string[]> {
+                        return await ls(at, { recurse: true, fullPaths: true });
+                    );
+                `,
+                expected = heredoc`
+                    import { type LsOptions, ls } from "yafs";
+                    export function lsr(at: string): Promise<string[]> {
+                        return await ls(at, { recurse: true, fullPaths: true });
+                    );
+                `,
+                mainFile = await sandbox.writeFile(
+                    "main.ts",
+                    mainContents
+                );
+            // quicker to copy an existing module than install from npm
+            await cp("node_modules/yafs", sandbox.fullPathFor("node_modules/yafs"), {
+                recurse: true,
+                onExisting: CopyFileOptions.overwriteExisting
+            });
             // Act
+            await convertTypeOnlyImports({ in: sandbox.path });
             // Assert
+            expect(mainFile)
+                .toHaveContents(expected);
+            expect(console.warn)
+                .not.toHaveBeenCalled();
         });
     });
 
     beforeEach(() => {
-        jest.spyOn(ctx, "exec");
+        jest.spyOn(console, "warn").mockReturnValue();
         ctx.mute();
     });
     afterEach(async () => {
