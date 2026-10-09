@@ -1,4 +1,13 @@
-import { folderExists, folderName, FsEntities, joinPath, ls, readTextFile, writeTextFile } from "yafs";
+import {
+    folderExists,
+    folderName,
+    fileName,
+    FsEntities,
+    joinPath,
+    ls,
+    readTextFile,
+    writeTextFile
+} from "yafs";
 import { ctx } from "exec-step";
 import * as path from "path";
 
@@ -243,6 +252,11 @@ ERROR: local import match doesn't work on file '${file}' for fragment: '${str}'
             localMatch.groups["moduleName"],
             alias
         );
+
+        if (await isFileImport(packageBaseFolder, moduleName)) {
+            continue;
+        }
+
         const searchPath = path.join(
             packageBaseFolder,
             "node_modules",
@@ -250,10 +264,12 @@ ERROR: local import match doesn't work on file '${file}' for fragment: '${str}'
         );
 
         if (!await folderExists(searchPath)) {
-            console.error(`
-WARNING: can't find node module '${moduleName}' at '${searchPath}'
-- type exports from this module will not be processed`.trim()
+            console.error([
+                    `WARNING: can't find node module '${moduleName}' at '${searchPath}'`,
+                    `- type exports from this module will not be processed`
+                ].join("\n")
             );
+            continue;
         }
 
         const moduleFiles = await ls(
@@ -274,6 +290,26 @@ WARNING: can't find node module '${moduleName}' at '${searchPath}'
 
     }
     return Array.from(result);
+}
+
+async function isFileImport(
+    packageBaseFolder: string,
+    moduleName: string
+): Promise<boolean> {
+    const
+        aliasedFileImport = path.join(
+            packageBaseFolder,
+            moduleName
+        ),
+        aliasedFileFolder = folderName(aliasedFileImport),
+        aliasedFileName = fileName(aliasedFileImport);
+
+    const fileMatch = await ls(aliasedFileFolder, {
+        entities: FsEntities.files,
+        fullPaths: true,
+        match: new RegExp(`${aliasedFileName}\.(ts|js|tsx|jsx)`)
+    });
+    return !!fileMatch.length;
 }
 
 function resolveAliases(

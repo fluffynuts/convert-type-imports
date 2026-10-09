@@ -5,6 +5,7 @@ import { convertTypeOnlyImports } from "../src";
 import { heredoc } from "heredoc-ts";
 import { ctx } from "exec-step";
 import { CopyFileOptions, cp } from "yafs";
+import * as path from "path";
 
 describe(`convert-type-only-imports`, () => {
     describe(`within the project code`, () => {
@@ -50,13 +51,13 @@ describe(`convert-type-only-imports`, () => {
                 }
             `,
                 originalMain = heredoc`
-                import { ICow } from "./cow.ts";
+                import { ICow } from "./cow";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
             `,
                 expected = heredoc`
-                import { type ICow } from "./cow.ts";
+                import { type ICow } from "./cow";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
@@ -87,7 +88,7 @@ describe(`convert-type-only-imports`, () => {
                 originalMain = heredoc`
                 import {
                     ICow
-                } from "./cow.ts";
+                } from "./cow";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
@@ -95,7 +96,7 @@ describe(`convert-type-only-imports`, () => {
                 expected = heredoc`
                 import {
                     type ICow
-                } from "./cow.ts";
+                } from "./cow";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
@@ -124,13 +125,13 @@ describe(`convert-type-only-imports`, () => {
                 }
             `,
                 originalMain = heredoc`
-                import { ICow } from "./cow.ts";
+                import { ICow } from "./cow";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
             `,
                 expected = heredoc`
-                import type { ICow } from "./cow.ts";
+                import type { ICow } from "./cow";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
@@ -163,13 +164,13 @@ describe(`convert-type-only-imports`, () => {
                 }
                 `,
                 main = heredoc`
-                import { ICow, Cow } from "./cow.ts";
+                import { ICow, Cow } from "./cow";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
             `,
                 expected = heredoc`
-                import { type ICow, Cow } from "./cow.ts";
+                import { type ICow, Cow } from "./cow";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
@@ -200,15 +201,15 @@ describe(`convert-type-only-imports`, () => {
                 }
                 `,
                 main = heredoc`
-                import { ICow, IDog } from "./cow.ts";
-                import { Cow } from "./cow.ts";
+                import { ICow, IDog } from "./cow";
+                import { Cow } from "./cow";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
             `,
                 expected = heredoc`
-                import type { ICow, IDog } from "./cow.ts";
-                import { Cow } from "./cow.ts";
+                import type { ICow, IDog } from "./cow";
+                import { Cow } from "./cow";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
@@ -242,8 +243,8 @@ describe(`convert-type-only-imports`, () => {
                 import {
                     ICow,
                     IDog
-                } from "./cow.ts";
-                import { Cow } from "./cow.ts";
+                } from "./cow";
+                import { Cow } from "./cow";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
@@ -252,8 +253,8 @@ describe(`convert-type-only-imports`, () => {
                 import type {
                     ICow,
                     IDog
-                } from "./cow.ts";
-                import { Cow } from "./cow.ts";
+                } from "./cow";
+                import { Cow } from "./cow";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
@@ -286,8 +287,8 @@ describe(`convert-type-only-imports`, () => {
                 main = heredoc`
                 import {
                     ICow, IDog
-                } from "./cow.ts";
-                import { Cow } from "./cow.ts";
+                } from "./cow";
+                import { Cow } from "./cow";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
@@ -295,8 +296,8 @@ describe(`convert-type-only-imports`, () => {
                 expected = heredoc`
                 import type {
                     ICow, IDog
-                } from "./cow.ts";
-                import { Cow } from "./cow.ts";
+                } from "./cow";
+                import { Cow } from "./cow";
                 export function makeCow(): ICow {
                     return new Cow("Daisy");
                 }
@@ -520,7 +521,7 @@ describe(`convert-type-only-imports`, () => {
     });
 
     describe(`handling import aliases`, () => {
-        it(`should resolve aliases provided on the cli`, async () => {
+        it(`should resolve parallel aliases provided on the cli`, async () => {
             // Arrange
             const
                 sandbox = await Sandbox.create(),
@@ -530,13 +531,13 @@ describe(`convert-type-only-imports`, () => {
                 }
             `,
                 originalMain = heredoc`
-                import { ICow } from "@/cow.ts";
+                import { ICow } from "@/cow";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
             `,
                 expected = heredoc`
-                import type { ICow } from "@/cow.ts";
+                import type { ICow } from "@/cow";
                 export function makeCow(): ICow {
                     return { name: "Daisy" };
                 }
@@ -555,10 +556,52 @@ describe(`convert-type-only-imports`, () => {
             expect(sandbox.fullPathFor("cow.ts"))
                 .toHaveContents(exporter);
         });
+        it(`should resolve non-parallel aliases provided on the cli`, async () => {
+            // Arrange
+            const
+                sandbox = await Sandbox.create(),
+                exporter = heredoc`
+                export interface ICow {
+                    name: string;
+                }
+            `,
+                originalMain = heredoc`
+                import { ICow } from "@/animals/cow";
+                export function makeCow(): ICow {
+                    return { name: "Daisy" };
+                }
+            `,
+                expected = heredoc`
+                import type { ICow } from "@/animals/cow";
+                export function makeCow(): ICow {
+                    return { name: "Daisy" };
+                }
+            `;
+            await sandbox.mkdir("node_modules");
+            const mainFilePath = await sandbox.writeFile(path.join("services", "main.ts"), originalMain);
+            const cowFilePath = await sandbox.writeFile(path.join("animals", "cow.ts"), exporter);
+            // Act
+            await convertTypeOnlyImports({
+                in: sandbox.path,
+                consolidateTypeImports: true,
+                alias: { "@": "." }
+            });
+            // Assert
+            expect(mainFilePath)
+                .toHaveContents(expected);
+            expect(cowFilePath)
+                .toHaveContents(exporter);
+            expect(console.error)
+                .not.toHaveBeenCalled();
+        });
     });
 
     beforeEach(() => {
         jest.spyOn(console, "warn").mockReturnValue();
+        // leaving error logs visible since these should
+        // be surfaced during testing to ensure that no
+        // error logs are left untested
+        jest.spyOn(console, "error");
         ctx.mute();
     });
     afterEach(async () => {
